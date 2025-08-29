@@ -38,12 +38,55 @@ A secure polling application built with Next.js and Supabase.
 
 5. **Regular security audits**: Periodically review code for security issues
 
+## Database Schema
+
+This application uses Supabase as its database. The schema consists of the following tables:
+
+### Tables
+
+1. **polls** - Stores information about polls
+2. **poll_options** - Stores options for each poll
+3. **votes** - Stores votes cast by users
+
+Detailed schema information can be found in the [Supabase README](./supabase/README.md).
+
+## Database Functions
+
+The application includes several utility functions for interacting with the database:
+
+- `createPoll` - Create a new poll with options
+- `getPoll` - Get a poll with its options
+- `getPollWithResults` - Get a poll with voting results
+- `getUserPolls` - Get all polls created by the current user
+- `getPublicPolls` - Get all public polls
+- `castVote` - Cast a vote on a poll
+- `hasUserVoted` - Check if a user has already voted on a poll
+- `deletePoll` - Delete a poll and its associated data
+
+These functions are available in `lib/supabase/database.ts`.
+
+## API Endpoints
+
+### Polls
+
+- `GET /api/polls` - Get all polls (public or user's polls)
+- `POST /api/polls` - Create a new poll
+- `GET /api/polls/[id]` - Get a specific poll
+- `DELETE /api/polls/[id]` - Delete a poll
+
+### Votes
+
+- `POST /api/polls/[id]/vote` - Cast a vote for a poll option
+- `GET /api/polls/[id]/vote` - Check if the user has voted
+
 ## Setup Instructions
 
 1. Clone the repository
 2. Copy `.env.example` to `.env.local` and fill in your Supabase credentials
 3. Install dependencies: `npm install`
-4. Run the development server: `npm run dev`
+4. Set up the database schema by running the SQL script in `supabase/schema.sql` or using migrations
+5. Verify the database schema: `npm run check-db`
+6. Run the development server: `npm run dev`
 
 ## Deployment
 

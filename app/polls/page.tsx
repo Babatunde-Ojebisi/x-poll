@@ -1,41 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { PollCard } from '@/app/components/polls/poll-card';
-
-// Mock data for polls
-const mockPolls = [
-  {
-    id: '1',
-    question: 'What is your favorite programming language?',
-    options: ['JavaScript', 'Python', 'Java', 'C#'],
-    votes: [42, 35, 20, 15],
-    createdBy: 'user1',
-    createdAt: '2023-08-15',
-  },
-  {
-    id: '2',
-    question: 'Which frontend framework do you prefer?',
-    options: ['React', 'Vue', 'Angular', 'Svelte'],
-    votes: [50, 30, 15, 25],
-    createdBy: 'user2',
-    createdAt: '2023-08-10',
-  },
-  {
-    id: '3',
-    question: 'What is your preferred database?',
-    options: ['MongoDB', 'PostgreSQL', 'MySQL', 'SQLite'],
-    votes: [28, 32, 30, 10],
-    createdBy: 'user3',
-    createdAt: '2023-08-05',
-  },
-];
+import { getPublicPolls } from '@/lib/supabase/database';
+import { PollWithOptions } from '@/types/supabase';
+import { useAuth } from '@/contexts/auth';
 
 export default function PollsPage() {
-  const [polls, setPolls] = useState(mockPolls);
+  const [polls, setPolls] = useState<PollWithOptions[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
+  useEffect(() => {
+    async function fetchPolls() {
+      try {
+        setLoading(true);
+        const { polls: fetchedPolls, error: fetchError } = await getPublicPolls();
+        
+        if (fetchError) {
+          console.error('Error fetching polls:', fetchError);
+          setError('Failed to load polls. Please try again later.');
+          return;
+        }
+        
+        setPolls(fetchedPolls);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching polls:', err);
+        setError('Failed to load polls. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchPolls();
+  }, []);
+  
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -45,20 +48,34 @@ export default function PollsPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {polls.map((poll) => (
-          <PollCard
-            key={poll.id}
-            id={poll.id}
-            question={poll.question}
-            options={poll.options}
-            votes={poll.votes}
-            createdBy={poll.createdBy}
-            createdAt={poll.createdAt}
-            showResults={true}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <p className="text-lg">Loading polls...</p>
+        </div>
+      ) : error ? (
+        <div className="flex justify-center items-center h-64">
+          <p className="text-red-500">{error}</p>
+        </div>
+      ) : polls.length === 0 ? (
+        <div className="flex justify-center items-center h-64">
+          <p className="text-lg">No polls available. Create one!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {polls.map((poll) => (
+            <PollCard
+              key={poll.id}
+              id={poll.id}
+              question={poll.title}
+              options={poll.options.map(opt => opt.option_text)}
+              votes={poll.options.map(() => 0)}
+              createdBy={poll.user_id}
+              createdAt={new Date(poll.created_at).toLocaleDateString()}
+              showResults={false}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="mt-8 text-center">
         <Link href="/">
