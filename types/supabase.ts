@@ -4,21 +4,22 @@ export type Poll = {
   id: string;
   title: string;
   description: string | null;
-  created_at: string;
-  end_date: string | null;
-  is_public: boolean;
-  allow_multiple_votes: boolean;
   user_id: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+  is_active: boolean;
 };
 
 export type PollOption = {
   id: string;
   poll_id: string;
   option_text: string;
+  vote_count: number;
   created_at: string;
 };
 
-export type Vote = {
+export interface Vote {
   id: string;
   poll_id: string;
   option_id: string;

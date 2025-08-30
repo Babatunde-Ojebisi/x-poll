@@ -6,8 +6,8 @@ import Link from 'next/link';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Textarea } from '@/app/components/ui/textarea';
-import { Checkbox } from '@/app/components/ui/checkbox';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/app/components/ui/card';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { createPoll } from '@/lib/supabase/database';
 import withAuth from '@/hocs/withAuth';
 import { useAuth } from '@/contexts/auth';
@@ -19,11 +19,10 @@ function CreatePoll() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [options, setOptions] = useState(['', '']);
-  const [isPublic, setIsPublic] = useState(true);
-  const [allowMultipleVotes, setAllowMultipleVotes] = useState(false);
-  const [endDate, setEndDate] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const handleOptionChange = (index: number, value: string) => {
     const newOptions = [...options];
@@ -63,9 +62,6 @@ function CreatePoll() {
         title,
         description,
         options: options.filter(opt => opt.trim()),
-        is_public: isPublic,
-        allow_multiple_votes: allowMultipleVotes,
-        end_date: endDate ? new Date(endDate).toISOString() : null,
       };
       
       const { poll: newPoll, error: createError } = await createPoll(pollData);
@@ -76,7 +72,12 @@ function CreatePoll() {
       }
       
       if (newPoll) {
-        router.push(`/polls/${newPoll.id}`);
+        setSuccess(true);
+        setError(null); // Clear any existing errors
+        // Show success message for 2 seconds before redirecting
+        setTimeout(() => {
+          router.push(`/polls/${newPoll.id}`);
+        }, 2000);
       } else {
         setError('Failed to create poll');
       }
@@ -102,6 +103,12 @@ function CreatePoll() {
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
               {error}
+            </div>
+          )}
+          
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-4">
+              🎉 Poll created successfully! Redirecting to your poll...
             </div>
           )}
           
@@ -170,42 +177,7 @@ function CreatePoll() {
             </Button>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                End Date (Optional)
-              </label>
-              <Input
-                type="datetime-local"
-                id="endDate"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave blank for a poll that never expires</p>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="isPublic" 
-                checked={isPublic} 
-                onCheckedChange={(checked: boolean) => setIsPublic(checked)}
-              />
-              <label htmlFor="isPublic" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Make this poll public
-              </label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="allowMultipleVotes"
-                checked={allowMultipleVotes}
-                onCheckedChange={(checked: boolean) => setAllowMultipleVotes(checked)}
-              />
-              <label htmlFor="allowMultipleVotes" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Allow multiple votes per user
-              </label>
-            </div>
-          </div>
+
           
           <div className="flex justify-end space-x-4">
             <Link href="/polls">

@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/app/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { formatDate, calculatePercentage } from '@/lib/utils';
 import { getPollWithResults, submitVote } from '@/lib/supabase/database';
 import { useAuth } from '@/contexts/auth';
-import { PollOption, PollWithOptions, PollWithResults } from '@/types/supabase';
+import { PollOption, PollWithResults } from '@/types/supabase';
 
 // Interface for poll with vote counts
 interface PollWithVotes extends PollWithResults {
@@ -43,6 +43,7 @@ export default function PollDetail({ params }: { params: { id: string } }) {
             votes: result.poll.results.map(result => result.vote_count),
             totalVotes: result.poll.results.reduce((sum, result) => sum + result.vote_count, 0),
             options: result.poll.results.map(result => ({
+              ...result,
               id: result.option_id,
               poll_id: params.id,
               option_text: result.option_text,
@@ -160,9 +161,9 @@ export default function PollDetail({ params }: { params: { id: string } }) {
           <p className="text-gray-600 dark:text-gray-400 mb-6">{poll.description}</p>
         )}
         
-        {poll.end_date && (
+        {poll.expires_at && (
           <p className="text-sm text-gray-500 mb-4">
-            Ends on: {formatDate(poll.end_date)}
+            Expires on: {formatDate(poll.expires_at)}
           </p>
         )}
 

@@ -9,12 +9,11 @@ export default function CreatePollForm() {
   const { user, loading } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [allowMultipleVotes, setAllowMultipleVotes] = useState(false);
+  const [expiresAt, setExpiresAt] = useState('');
   const [options, setOptions] = useState(['', '']);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const handleOptionChange = (index: number, value: string) => {
     const newOptions = [...options];
@@ -65,9 +64,7 @@ export default function CreatePollForm() {
         body: JSON.stringify({
           title,
           description: description || null,
-          endDate: endDate || null,
-          isPublic,
-          allowMultipleVotes,
+          expires_at: expiresAt || null,
           options: validOptions,
         }),
       });
@@ -78,9 +75,14 @@ export default function CreatePollForm() {
         throw new Error(data.error || 'Failed to create poll');
       }
       
-      // Redirect to the new poll
-      router.push(`/polls/${data.poll.id}`);
-      router.refresh();
+      // Show success message
+      setSuccess(true);
+      setError('');
+      
+      // Redirect after 2 seconds
+      setTimeout(() => {
+        router.push(`/polls/${data.poll.id}`);
+      }, 2000);
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -128,6 +130,12 @@ export default function CreatePollForm() {
         </div>
       )}
       
+      {success && (
+        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
+          🎉 Poll created successfully! Redirecting to your poll...
+        </div>
+      )}
+      
       <form onSubmit={handleSubmit}>
         <div className="mb-4">
           <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
@@ -159,44 +167,16 @@ export default function CreatePollForm() {
         </div>
         
         <div className="mb-4">
-          <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
-            End Date (optional)
+          <label htmlFor="expiresAt" className="block text-sm font-medium text-gray-700 mb-1">
+            Expires At (optional)
           </label>
           <input
             type="datetime-local"
-            id="endDate"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            id="expiresAt"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-        </div>
-        
-        <div className="mb-4 flex space-x-6">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isPublic"
-              checked={isPublic}
-              onChange={(e) => setIsPublic(e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="isPublic" className="ml-2 block text-sm text-gray-700">
-              Public Poll
-            </label>
-          </div>
-          
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="allowMultipleVotes"
-              checked={allowMultipleVotes}
-              onChange={(e) => setAllowMultipleVotes(e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="allowMultipleVotes" className="ml-2 block text-sm text-gray-700">
-              Allow Multiple Votes
-            </label>
-          </div>
         </div>
         
         <div className="mb-4">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { castVote, hasUserVoted, getPoll } from '@/lib/supabase/database';
 import { cookies } from 'next/headers';
 import { v4 as uuidv4 } from 'uuid';
+import { createErrorResponse, createSuccessResponse, validateRequiredFields } from '@/lib/utils/api-helpers';
 
 // POST /api/polls/[id]/vote - Cast a vote for a poll option
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
@@ -11,29 +12,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const { optionId } = body;
     
     // Validate required fields
-    if (!optionId) {
-      return NextResponse.json(
-        { error: 'Option ID is required' },
-        { status: 400 }
-      );
+    const validationError = validateRequiredFields(body, ['optionId']);
+    if (validationError) {
+      return createErrorResponse(validationError);
     }
     
     // Check if the poll exists
     const { poll, error: pollError } = await getPoll(pollId);
     
     if (pollError || !poll) {
-      return NextResponse.json(
-        { error: 'Poll not found' },
-        { status: 404 }
-      );
+      return createErrorResponse('Poll not found', 404);
     }
     
-    // Check if the poll has ended
-    if (poll.end_date && new Date(poll.end_date) < new Date()) {
-      return NextResponse.json(
-        { error: 'This poll has ended' },
-        { status: 400 }
-      );
+    // Check if the poll has expired
+    if (poll.expires_at && new Date(poll.expires_at) < new Date()) {
+      return createErrorResponse('This poll has expired');
     }
     
     // For anonymous users, use a cookie to track their ID
@@ -45,33 +38,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       // Since we're using Next.js API routes, we need to handle this differently
     }
     
-    // Check if the user has already voted (unless multiple votes are allowed)
-    if (!poll.allow_multiple_votes) {
-      const { hasVoted, error: voteCheckError } = await hasUserVoted(pollId, anonymousId);
-      
-      if (voteCheckError) {
-        return NextResponse.json(
-          { error: voteCheckError.message },
-          { status: 400 }
-        );
-      }
-      
-      if (hasVoted) {
-        return NextResponse.json(
-          { error: 'You have already voted in this poll' },
-          { status: 400 }
-        );
-      }
+    // Check if the user has already voted (one vote per user per poll)
+    const { hasVoted, error: voteCheckError } = await hasUserVoted(pollId, anonymousId);
+    
+    if (voteCheckError) {
+      return createErrorResponse(voteCheckError.message);
+    }
+    
+    if (hasVoted) {
+      return createErrorResponse('You have already voted in this poll');
     }
     
     // Cast the vote
     const { success, error } = await castVote(pollId, optionId, anonymousId);
     
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
+      return createErrorResponse(error.message);
     }
     
     // Set the anonymous ID cookie in the response
@@ -88,10 +70,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     
     return response;
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to cast vote' },
-      { status: 500 }
-    );
+    return createErrorResponse('Failed to cast vote', 500);
   }
 }
 
@@ -107,17 +86,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const { hasVoted, error } = await hasUserVoted(pollId, anonymousId);
     
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
+      return createErrorResponse(error.message);
     }
     
-    return NextResponse.json({ hasVoted });
+    return createSuccessResponse({ hasVoted });
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to check vote status' },
-      { status: 500 }
-    );
+    return createErrorResponse('Failed to check vote status', 500);
   }
 }

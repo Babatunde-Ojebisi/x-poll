@@ -7,6 +7,32 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Helper function to get authenticated user
+async function getAuthenticatedUser(): Promise<{ user: any; error: any }> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  
+  if (userError || !user) {
+    return { user: null, error: userError || new Error('User not authenticated') };
+  }
+  
+  return { user, error: null };
+}
+
+// Helper function to get poll by ID
+async function fetchPollById(pollId: string): Promise<{ poll: Poll | null; error: any }> {
+  const { data: pollData, error: pollError } = await supabase
+    .from('polls')
+    .select('*')
+    .eq('id', pollId)
+    .single();
+  
+  if (pollError || !pollData) {
+    return { poll: null, error: pollError || new Error('Poll not found') };
+  }
+  
+  return { poll: pollData as Poll, error: null };
+}
+
 // Helper function to check if a table exists
 export async function checkTableExists(tableName: string): Promise<boolean> {
   try {
@@ -27,9 +53,7 @@ export async function checkTableExists(tableName: string): Promise<boolean> {
 export async function createPoll(pollInput: {
   title: string,
   description?: string | null,
-  end_date?: string | null,
-  is_public?: boolean,
-  allow_multiple_votes?: boolean,
+  expires_at?: string | null,
   options: string[]
 }): Promise<{ poll: Poll | null; error: any }> {
   try {
@@ -58,9 +82,7 @@ export async function createPoll(pollInput: {
     const pollData = {
       title: pollInput.title,
       description: pollInput.description || null,
-      end_date: pollInput.end_date || null,
-      is_public: pollInput.is_public !== undefined ? pollInput.is_public : true,
-      allow_multiple_votes: pollInput.allow_multiple_votes || false,
+      expires_at: pollInput.expires_at || null,
       user_id: user.id
     };
     
@@ -114,15 +136,11 @@ export async function createPoll(pollInput: {
 
 export async function getPoll(pollId: string): Promise<{ poll: PollWithOptions | null; error: any }> {
   try {
-    // Get the poll
-    const { data: pollData, error: pollError } = await supabase
-      .from('polls')
-      .select('*')
-      .eq('id', pollId)
-      .single();
+    // Get the poll using helper
+    const { poll: pollData, error: pollError } = await fetchPollById(pollId);
     
     if (pollError || !pollData) {
-      return { poll: null, error: pollError || new Error('Poll not found') };
+      return { poll: null, error: pollError };
     }
     
     // Get the options
@@ -136,7 +154,7 @@ export async function getPoll(pollId: string): Promise<{ poll: PollWithOptions |
     }
     
     const pollWithOptions: PollWithOptions = {
-      ...pollData as Poll,
+      ...pollData,
       options: optionsData as PollOption[]
     };
     
@@ -148,15 +166,11 @@ export async function getPoll(pollId: string): Promise<{ poll: PollWithOptions |
 
 export async function getPollWithResults(pollId: string): Promise<{ poll: PollWithResults | null; error: any }> {
   try {
-    // Get the poll
-    const { data: pollData, error: pollError } = await supabase
-      .from('polls')
-      .select('*')
-      .eq('id', pollId)
-      .single();
+    // Get the poll using helper
+    const { poll: pollData, error: pollError } = await fetchPollById(pollId);
     
     if (pollError || !pollData) {
-      return { poll: null, error: pollError || new Error('Poll not found') };
+      return { poll: null, error: pollError };
     }
     
     // Get the results using the database function
@@ -168,7 +182,7 @@ export async function getPollWithResults(pollId: string): Promise<{ poll: PollWi
     }
     
     const pollWithResults: PollWithResults = {
-      ...pollData as Poll,
+      ...pollData,
       results: resultsData as PollResult[]
     };
     
@@ -180,11 +194,11 @@ export async function getPollWithResults(pollId: string): Promise<{ poll: PollWi
 
 export async function getUserPolls(): Promise<{ polls: Poll[]; error: any }> {
   try {
-    // Get the current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Get the current user using helper
+    const { user, error: userError } = await getAuthenticatedUser();
     
     if (userError || !user) {
-      return { polls: [], error: userError || new Error('User not authenticated') };
+      return { polls: [], error: userError };
     }
     
     // Get the user's polls
@@ -206,14 +220,13 @@ export async function getUserPolls(): Promise<{ polls: Poll[]; error: any }> {
 
 export async function getPublicPolls(): Promise<{ polls: PollWithOptions[]; error: any }> {
   try {
-    // Get public polls with their options
+    // Get all polls with their options (since is_public field was removed)
     const { data: pollsData, error: pollsError } = await supabase
       .from('polls')
       .select(`
         *,
         options:poll_options(*)
       `)
-      .eq('is_public', true)
       .order('created_at', { ascending: false });
     
     if (pollsError) {
@@ -229,8 +242,8 @@ export async function getPublicPolls(): Promise<{ polls: PollWithOptions[]; erro
 // Vote related functions
 export async function submitVote(pollId: string, optionId: string): Promise<boolean> {
   try {
-    // Get the current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Get the current user using helper
+    const { user, error: userError } = await getAuthenticatedUser();
     
     if (userError || !user) {
       console.error('User not authenticated:', userError);
@@ -346,11 +359,11 @@ export async function hasUserVoted(
 
 export async function deletePoll(pollId: string): Promise<{ success: boolean; error: any }> {
   try {
-    // Get the current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Get the current user using helper
+    const { user, error: userError } = await getAuthenticatedUser();
     
     if (userError || !user) {
-      return { success: false, error: userError || new Error('User not authenticated') };
+      return { success: false, error: userError };
     }
     
     // Delete the poll (cascade will delete options and votes)
