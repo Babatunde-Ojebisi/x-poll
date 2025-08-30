@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/auth';
 
 export default function CreatePollForm() {
   const router = useRouter();
+  const { user, loading } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -33,6 +35,12 @@ export default function CreatePollForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    // Check authentication first
+    if (!user) {
+      setError('You must be signed in to create a poll. Please sign in and try again.');
+      return;
+    }
     
     // Validate form
     if (!title.trim()) {
@@ -79,6 +87,36 @@ export default function CreatePollForm() {
       setIsSubmitting(false);
     }
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show sign-in prompt if not authenticated
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
+        <h1 className="text-2xl font-bold mb-6">Create a New Poll</h1>
+        <div className="text-center py-8">
+          <p className="text-gray-600 mb-4">You must be signed in to create a poll.</p>
+          <button
+            onClick={() => router.push('/auth/signin')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">

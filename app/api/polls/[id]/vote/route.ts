@@ -76,13 +76,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     
     // Set the anonymous ID cookie in the response
     const response = NextResponse.json({ success }, { status: 201 });
-    response.cookies.set('anonymous_user_id', anonymousId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 24 * 365, // 1 year
-      path: '/'
-    });
+    if (anonymousId) {
+      response.cookies.set('anonymous_user_id', anonymousId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+        path: '/'
+      });
+    }
     
     return response;
   } catch (error) {

@@ -68,7 +68,12 @@ function CreatePoll() {
         end_date: endDate ? new Date(endDate).toISOString() : null,
       };
       
-      const newPoll = await createPoll(pollData);
+      const { poll: newPoll, error: createError } = await createPoll(pollData);
+      
+      if (createError) {
+        setError(createError.message || 'Failed to create poll');
+        return;
+      }
       
       if (newPoll) {
         router.push(`/polls/${newPoll.id}`);
@@ -183,7 +188,7 @@ function CreatePoll() {
               <Checkbox 
                 id="isPublic" 
                 checked={isPublic} 
-                onCheckedChange={(checked) => setIsPublic(checked as boolean)}
+                onCheckedChange={(checked: boolean) => setIsPublic(checked)}
               />
               <label htmlFor="isPublic" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Make this poll public
@@ -192,12 +197,12 @@ function CreatePoll() {
             
             <div className="flex items-center space-x-2">
               <Checkbox 
-                id="allowMultipleVotes" 
-                checked={allowMultipleVotes} 
-                onCheckedChange={(checked) => setAllowMultipleVotes(checked as boolean)}
+                id="allowMultipleVotes"
+                checked={allowMultipleVotes}
+                onCheckedChange={(checked: boolean) => setAllowMultipleVotes(checked)}
               />
               <label htmlFor="allowMultipleVotes" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Allow users to vote multiple times
+                Allow multiple votes per user
               </label>
             </div>
           </div>

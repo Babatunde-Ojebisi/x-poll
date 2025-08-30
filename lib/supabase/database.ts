@@ -33,46 +33,79 @@ export async function createPoll(pollInput: {
   options: string[]
 }): Promise<{ poll: Poll | null; error: any }> {
   try {
-    // Get the current user
+    // Get the current user with detailed session info
     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    console.log('Auth Debug Info:', {
+      user: user ? { id: user.id, email: user.email } : null,
+      session: session ? { access_token: session.access_token ? 'present' : 'missing' } : null,
+      userError,
+      sessionError
+    });
     
     if (userError || !user) {
-      return { poll: null, error: userError || new Error('User not authenticated') };
+      console.error('Authentication failed:', userError);
+      return { poll: null, error: userError || new Error('User not authenticated. Please sign in first.') };
     }
     
-    // Insert the poll
-    const { data: pollData, error: pollError } = await supabase
+    if (!session) {
+      console.error('No active session found');
+      return { poll: null, error: new Error('No active session. Please sign in again.') };
+    }
+    
+    // Insert the poll with explicit user_id
+    const pollData = {
+      title: pollInput.title,
+      description: pollInput.description || null,
+      end_date: pollInput.end_date || null,
+      is_public: pollInput.is_public !== undefined ? pollInput.is_public : true,
+      allow_multiple_votes: pollInput.allow_multiple_votes || false,
+      user_id: user.id
+    };
+    
+    console.log('Attempting to insert poll:', pollData);
+    
+    const { data: insertedPoll, error: pollError } = await supabase
       .from('polls')
-      .insert({
-        title: pollInput.title,
-        description: pollInput.description || null,
-        end_date: pollInput.end_date || null,
-        is_public: pollInput.is_public !== undefined ? pollInput.is_public : true,
-        allow_multiple_votes: pollInput.allow_multiple_votes || false,
-        user_id: user.id
-      })
+      .insert(pollData)
       .select()
       .single();
     
-    if (pollError || !pollData) {
-      return { poll: null, error: pollError || new Error('Failed to create poll') };
+    if (pollError) {
+      console.error('Poll insertion error:', pollError);
+      if (pollError.message?.includes('row-level security policy')) {
+        return { 
+          poll: null, 
+          error: new Error('Authentication error: Please ensure you are signed in and try refreshing the page. If the issue persists, contact support.') 
+        };
+      }
+      return { poll: null, error: pollError };
+    }
+    
+    if (!insertedPoll) {
+      return { poll: null, error: new Error('Failed to create poll - no data returned') };
     }
     
     // Insert the options
     const optionsToInsert = pollInput.options.map(option => ({
-      poll_id: pollData.id,
+      poll_id: insertedPoll.id,
       option_text: option
     }));
+    
+    console.log('Attempting to insert options:', optionsToInsert);
     
     const { error: optionsError } = await supabase
       .from('poll_options')
       .insert(optionsToInsert);
     
     if (optionsError) {
+      console.error('Options insertion error:', optionsError);
       return { poll: null, error: optionsError };
     }
     
-    return { poll: pollData as Poll, error: null };
+    console.log('Poll created successfully:', insertedPoll);
+    return { poll: insertedPoll as Poll, error: null };
   } catch (error) {
     console.error('Error creating poll:', error);
     return { poll: null, error };
@@ -171,12 +204,15 @@ export async function getUserPolls(): Promise<{ polls: Poll[]; error: any }> {
   }
 }
 
-export async function getPublicPolls(): Promise<{ polls: Poll[]; error: any }> {
+export async function getPublicPolls(): Promise<{ polls: PollWithOptions[]; error: any }> {
   try {
-    // Get public polls
+    // Get public polls with their options
     const { data: pollsData, error: pollsError } = await supabase
       .from('polls')
-      .select('*')
+      .select(`
+        *,
+        options:poll_options(*)
+      `)
       .eq('is_public', true)
       .order('created_at', { ascending: false });
     
@@ -184,7 +220,7 @@ export async function getPublicPolls(): Promise<{ polls: Poll[]; error: any }> {
       return { polls: [], error: pollsError };
     }
     
-    return { polls: pollsData as Poll[], error: null };
+    return { polls: pollsData as PollWithOptions[], error: null };
   } catch (error) {
     return { polls: [], error };
   }

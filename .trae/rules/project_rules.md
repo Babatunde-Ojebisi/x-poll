@@ -41,3 +41,22 @@
 - Review others' code promptly
 - Provide constructive feedback
 - Keep discussions professional
+
+## Project Structure
+- Place all poll-related components in `/app/polls/`
+- Keep API routes in `/app/api/` organized by feature
+- Store shared types in `/types` directory
+- Place reusable components in `/components/shared`
+
+## Form Implementation
+- Use react-hook-form for all form handling
+- Implement form validation using zod schemas
+- Use shadcn/ui components for consistent UI
+- Keep form logic separate from presentation
+
+## Supabase Integration
+- Use Row Level Security (RLS) for all tables
+- Implement proper error handling for Supabase queries
+- Use TypeScript types generated from Supabase schema
+- Follow prescribed auth flow using Supabase Auth
+- Cache frequently accessed data using React Query
