@@ -122,7 +122,7 @@ export default function PollDisplay({ pollId }: PollDisplayProps) {
   }
 
   // Check if poll has ended
-  const hasEnded = poll.end_date && new Date(poll.end_date) < new Date();
+  const hasEnded = poll.expires_at && new Date(poll.expires_at) < new Date();
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
@@ -134,8 +134,8 @@ export default function PollDisplay({ pollId }: PollDisplayProps) {
       
       <div className="text-sm text-gray-500 mb-6">
         Created: {new Date(poll.created_at).toLocaleDateString()}
-        {poll.end_date && (
-          <> · Ends: {new Date(poll.end_date).toLocaleDateString()}</>
+        {poll.expires_at && (
+          <> · Ends: {new Date(poll.expires_at).toLocaleDateString()}</>
         )}
         {hasEnded && (
           <span className="ml-2 text-red-500 font-medium">Poll has ended</span>
@@ -212,11 +212,7 @@ export default function PollDisplay({ pollId }: PollDisplayProps) {
             {isSubmitting ? 'Submitting...' : 'Vote'}
           </button>
           
-          {poll.allow_multiple_votes && (
-            <p className="mt-2 text-sm text-gray-500">
-              Note: This poll allows multiple votes per user.
-            </p>
-          )}
+
         </form>
       )}
     </div>

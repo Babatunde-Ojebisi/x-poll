@@ -72,6 +72,7 @@ export default function PollsPage() {
               createdBy={poll.user_id}
               createdAt={new Date(poll.created_at).toLocaleDateString()}
               showResults={false}
+              isOwner={user !== null && user.id === poll.user_id}
             />
           ))}
         </div>

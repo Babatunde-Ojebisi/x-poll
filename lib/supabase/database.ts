@@ -1,21 +1,29 @@
-import { createClient } from '@supabase/supabase-js';
 import { Poll, PollOption, Vote, PollResult, PollWithOptions, PollWithResults } from '../../types/supabase';
+import { supabase } from './client';
 
-// Initialize the Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Note: We're now importing the supabase client from './client.ts'
+// This allows us to use either the browser client or server client as needed
 
 // Helper function to get authenticated user
 async function getAuthenticatedUser(): Promise<{ user: any; error: any }> {
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !user) {
-    return { user: null, error: userError || new Error('User not authenticated') };
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError) {
+      console.error('Auth error:', userError.message);
+      return { user: null, error: userError };
+    }
+    
+    if (!user) {
+      console.error('No user found');
+      return { user: null, error: new Error('User not authenticated') };
+    }
+    
+    return { user, error: null };
+  } catch (error) {
+    console.error('Exception in getAuthenticatedUser:', error);
+    return { user: null, error: error || new Error('Authentication error') };
   }
-  
-  return { user, error: null };
 }
 
 // Helper function to get poll by ID
@@ -358,12 +366,52 @@ export async function hasUserVoted(
 }
 
 export async function deletePoll(pollId: string): Promise<{ success: boolean; error: any }> {
+  console.log(`Attempting to delete poll with ID: ${pollId}`);
+  
   try {
-    // Get the current user using helper
-    const { user, error: userError } = await getAuthenticatedUser();
+    // Get the current user with detailed session info - similar to createPoll
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    console.log('Auth Debug Info for deletePoll:', {
+      user: user ? { id: user.id, email: user.email } : null,
+      session: session ? { access_token: session.access_token ? 'present' : 'missing' } : null,
+      userError,
+      sessionError
+    });
     
     if (userError || !user) {
-      return { success: false, error: userError };
+      console.error('Authentication failed in deletePoll:', userError);
+      return { success: false, error: userError || new Error('User not authenticated. Please sign in first.') };
+    }
+    
+    if (!session) {
+      console.error('No active session found in deletePoll');
+      return { success: false, error: new Error('No active session. Please sign in again.') };
+    }
+    
+    console.log(`Authenticated user ID: ${user.id}`);
+    
+    // First, verify the poll belongs to the user
+    const { data: pollData, error: pollError } = await supabase
+      .from('polls')
+      .select('user_id')
+      .eq('id', pollId)
+      .single();
+      
+    if (pollError) {
+      console.error('Error fetching poll:', pollError);
+      return { success: false, error: pollError };
+    }
+    
+    if (!pollData) {
+      console.error('Poll not found');
+      return { success: false, error: new Error('Poll not found') };
+    }
+    
+    if (pollData.user_id !== user.id) {
+      console.error('User does not own this poll');
+      return { success: false, error: new Error('You do not have permission to delete this poll') };
     }
     
     // Delete the poll (cascade will delete options and votes)
@@ -374,11 +422,14 @@ export async function deletePoll(pollId: string): Promise<{ success: boolean; er
       .eq('user_id', user.id);
     
     if (deleteError) {
+      console.error('Supabase error in deletePoll:', deleteError);
       return { success: false, error: deleteError };
     }
     
+    console.log(`Successfully deleted poll with ID: ${pollId}`);
     return { success: true, error: null };
   } catch (error) {
+    console.error('Exception in deletePoll:', error);
     return { success: false, error };
   }
 }

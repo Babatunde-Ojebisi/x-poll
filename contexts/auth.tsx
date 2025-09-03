@@ -20,24 +20,70 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
+    // Check if we're running in a browser environment
+    const isBrowser = typeof window !== 'undefined';
+    if (!isBrowser) {
+      // In server-side rendering, don't attempt to get user
       setLoading(false);
+      return;
+    }
+
+    const getUser = async () => {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+        
+        if (error) {
+          // Handle AuthSessionMissingError gracefully
+          if (error.message.includes('Auth session missing')) {
+            console.log('No active session found');
+          } else {
+            console.error('Error getting user:', error);
+          }
+          setUser(null);
+        } else {
+          setUser(user);
+        }
+      } catch (error: any) {
+        // Handle any exceptions during auth
+        if (error?.message?.includes('Auth session missing')) {
+          console.log('No active session found');
+        } else {
+          console.error('Exception getting user:', error);
+        }
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     getUser();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
+    // Only set up auth listener in browser environment
+    let authListener: { subscription: { unsubscribe: () => void } } | null = null;
+    
+    try {
+      const { data } = supabase.auth.onAuthStateChange(
+        (event, session) => {
+          console.log('Auth state changed:', event);
+          setUser(session?.user ?? null);
+        }
+      );
+      authListener = data;
+    } catch (error) {
+      console.error('Error setting up auth listener:', error);
+    }
 
     return () => {
-      authListener.subscription.unsubscribe();
+      if (authListener) {
+        try {
+          authListener.subscription.unsubscribe();
+        } catch (error) {
+          console.error('Error unsubscribing from auth listener:', error);
+        }
+      }
     };
   }, []);
 

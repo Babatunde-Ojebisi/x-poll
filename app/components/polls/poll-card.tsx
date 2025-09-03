@@ -3,7 +3,23 @@
 import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
-import { formatDate, calculatePercentage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import DeletePollButton from '@/app/components/polls/delete-poll-button';
+
+// Helper functions for formatting
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+function calculatePercentage(votes: number, totalVotes: number): number {
+  if (totalVotes === 0) return 0;
+  return Math.round((votes / totalVotes) * 100);
+}
 
 interface PollOption {
   text: string;
@@ -18,6 +34,7 @@ interface PollCardProps {
   createdBy: string;
   createdAt: string;
   showResults?: boolean;
+  isOwner?: boolean;
 }
 
 export function PollCard({
@@ -28,6 +45,7 @@ export function PollCard({
   createdBy,
   createdAt,
   showResults = false,
+  isOwner = false,
 }: PollCardProps) {
   const totalVotes = votes.reduce((sum, current) => sum + current, 0);
 
@@ -61,12 +79,15 @@ export function PollCard({
           ))}
         </div>
       </CardContent>
-      <CardFooter>
-        <Link href={`/polls/${id}`} className="w-full">
+      <CardFooter className="flex gap-2">
+        <Link href={`/polls/${id}`} className="flex-1">
           <Button variant="outline" className="w-full">
             {showResults ? 'View Details' : 'Vote Now'}
           </Button>
         </Link>
+        {isOwner && (
+          <DeletePollButton pollId={id} />
+        )}
       </CardFooter>
     </Card>
   );
