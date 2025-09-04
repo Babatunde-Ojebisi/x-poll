@@ -1,14 +1,16 @@
 'use client';
 
-import { Button } from '@/app/components/ui/button';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/app/components/ui/button';
+import { Trash2 } from 'lucide-react';
 
 interface DeletePollButtonProps {
   pollId: string;
+  onDeleteSuccess?: () => void; // Callback for successful deletion
 }
 
-export default function DeletePollButton({ pollId }: DeletePollButtonProps) {
+export default function DeletePollButton({ pollId, onDeleteSuccess }: DeletePollButtonProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
@@ -19,20 +21,41 @@ export default function DeletePollButton({ pollId }: DeletePollButtonProps) {
 
     try {
       setIsDeleting(true);
+      console.log('Attempting to delete poll:', pollId);
       
+      // Get auth cookies from browser and include them in the request
       const response = await fetch(`/api/polls/${pollId}`, {
         method: 'DELETE',
-        credentials: 'include',
+        credentials: 'include', // Important: include cookies
         headers: {
           'Content-Type': 'application/json',
         },
+        cache: 'no-store', // Prevent caching of the delete request
       });
 
+      const responseText = await response.text();
+      console.log('Delete response:', response.status, responseText);
+      
+      let errorData;
+      try {
+        errorData = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        console.error('Error parsing response:', e);
+        errorData = { message: responseText || 'Unknown error' };
+      }
+
       if (response.ok) {
-        router.push('/polls');
-        router.refresh();
+        console.log('Poll deleted successfully');
+        
+        // Call the onDeleteSuccess callback if provided
+        if (onDeleteSuccess) {
+          onDeleteSuccess();
+        } else {
+          // Fall back to page navigation if no callback provided
+          window.location.href = '/polls';
+        }
       } else {
-        const errorData = await response.json();
+        console.error('Failed to delete poll:', errorData);
         alert(`Failed to delete poll: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {

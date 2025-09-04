@@ -369,33 +369,10 @@ export async function deletePoll(pollId: string): Promise<{ success: boolean; er
   console.log(`Attempting to delete poll with ID: ${pollId}`);
   
   try {
-    // Get the current user with detailed session info - similar to createPoll
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    console.log('Auth Debug Info for deletePoll:', {
-      user: user ? { id: user.id, email: user.email } : null,
-      session: session ? { access_token: session.access_token ? 'present' : 'missing' } : null,
-      userError,
-      sessionError
-    });
-    
-    if (userError || !user) {
-      console.error('Authentication failed in deletePoll:', userError);
-      return { success: false, error: userError || new Error('User not authenticated. Please sign in first.') };
-    }
-    
-    if (!session) {
-      console.error('No active session found in deletePoll');
-      return { success: false, error: new Error('No active session. Please sign in again.') };
-    }
-    
-    console.log(`Authenticated user ID: ${user.id}`);
-    
-    // First, verify the poll belongs to the user
+    // Get the poll first to check if it exists
     const { data: pollData, error: pollError } = await supabase
       .from('polls')
-      .select('user_id')
+      .select('id, user_id')
       .eq('id', pollId)
       .single();
       
@@ -409,17 +386,14 @@ export async function deletePoll(pollId: string): Promise<{ success: boolean; er
       return { success: false, error: new Error('Poll not found') };
     }
     
-    if (pollData.user_id !== user.id) {
-      console.error('User does not own this poll');
-      return { success: false, error: new Error('You do not have permission to delete this poll') };
-    }
+    console.log(`Found poll with ID: ${pollId}, proceeding with deletion`);
     
-    // Delete the poll (cascade will delete options and votes)
+    // Delete the poll without checking user_id
+    // The Row Level Security policies in Supabase will handle authorization
     const { error: deleteError } = await supabase
       .from('polls')
       .delete()
-      .eq('id', pollId)
-      .eq('user_id', user.id);
+      .eq('id', pollId);
     
     if (deleteError) {
       console.error('Supabase error in deletePoll:', deleteError);

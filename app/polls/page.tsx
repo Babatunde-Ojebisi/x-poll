@@ -13,6 +13,12 @@ export default function PollsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
+  
+  // Function to handle poll deletion
+  const handlePollDelete = (pollId: string) => {
+    console.log('Removing poll from list:', pollId);
+    setPolls(currentPolls => currentPolls.filter(poll => poll.id !== pollId));
+  };
 
   useEffect(() => {
     async function fetchPolls() {
@@ -73,6 +79,7 @@ export default function PollsPage() {
               createdAt={new Date(poll.created_at).toLocaleDateString()}
               showResults={false}
               isOwner={user !== null && user.id === poll.user_id}
+              onDelete={handlePollDelete}
             />
           ))}
         </div>

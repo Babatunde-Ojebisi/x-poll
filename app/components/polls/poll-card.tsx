@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -35,6 +36,7 @@ interface PollCardProps {
   createdAt: string;
   showResults?: boolean;
   isOwner?: boolean;
+  onDelete?: (id: string) => void; // Callback for when poll is deleted
 }
 
 export function PollCard({
@@ -46,8 +48,23 @@ export function PollCard({
   createdAt,
   showResults = false,
   isOwner = false,
+  onDelete,
 }: PollCardProps) {
   const totalVotes = votes.reduce((sum, current) => sum + current, 0);
+  const [isVisible, setIsVisible] = useState(true);
+  
+  // Handle successful deletion
+  const handleDeleteSuccess = () => {
+    console.log('Poll deleted successfully, removing from UI');
+    setIsVisible(false);
+    if (onDelete) {
+      onDelete(id);
+    }
+  };
+
+  if (!isVisible) {
+    return null; // Don't render if deleted
+  }
 
   return (
     <Card className="w-full hover:shadow-md transition-shadow">
@@ -86,7 +103,7 @@ export function PollCard({
           </Button>
         </Link>
         {isOwner && (
-          <DeletePollButton pollId={id} />
+          <DeletePollButton pollId={id} onDeleteSuccess={handleDeleteSuccess} />
         )}
       </CardFooter>
     </Card>
