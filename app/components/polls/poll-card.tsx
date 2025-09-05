@@ -55,7 +55,7 @@ export function PollCard({
   
   // Handle successful deletion
   const handleDeleteSuccess = () => {
-    console.log('Poll deleted successfully, removing from UI');
+    // Poll deleted successfully, removing from UI
     setIsVisible(false);
     if (onDelete) {
       onDelete(id);

@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { Poll, PollOption, PollResult } from '@/types/supabase';
+import { useCSRF } from '@/hooks/useCSRF';
 
 type PollDisplayProps = {
   pollId: string;
 };
 
 export default function PollDisplay({ pollId }: PollDisplayProps) {
+  const { votePoll, deletePoll, isLoading: csrfLoading } = useCSRF();
   const [poll, setPoll] = useState<Poll | null>(null);
   const [options, setOptions] = useState<PollOption[]>([]);
   const [results, setResults] = useState<PollResult[]>([]);
@@ -72,15 +74,7 @@ export default function PollDisplay({ pollId }: PollDisplayProps) {
       setIsSubmitting(true);
       setError('');
       
-      const response = await fetch(`/api/polls/${pollId}/vote`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          optionId: selectedOption,
-        }),
-      });
+      const response = await votePoll(pollId, selectedOption);
       
       const data = await response.json();
       
@@ -206,7 +200,7 @@ export default function PollDisplay({ pollId }: PollDisplayProps) {
           
           <button
             type="submit"
-            disabled={isSubmitting || !selectedOption}
+            disabled={isSubmitting || csrfLoading || !selectedOption}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
             {isSubmitting ? 'Submitting...' : 'Vote'}

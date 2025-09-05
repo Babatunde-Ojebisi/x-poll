@@ -16,7 +16,7 @@ export default function PollsPage() {
   
   // Function to handle poll deletion
   const handlePollDelete = (pollId: string) => {
-    console.log('Removing poll from list:', pollId);
+    // Removing poll from list
     setPolls(currentPolls => currentPolls.filter(poll => poll.id !== pollId));
   };
 

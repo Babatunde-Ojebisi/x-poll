@@ -1,96 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { castVote, hasUserVoted, getPoll } from '@/lib/supabase/database';
+import { castVote } from '@/lib/supabase/database';
+import { validateVoteInput } from '@/lib/utils/api-helpers';
+import { createClient } from '@/lib/supabase/client';
 import { cookies } from 'next/headers';
-import { v4 as uuidv4 } from 'uuid';
-import { createErrorResponse, createSuccessResponse, validateRequiredFields } from '@/lib/utils/api-helpers';
+import { checkRateLimit, createRateLimitHeaders } from '@/lib/middleware/rate-limit';
+import { ErrorFactory, createErrorResponse as createSecureErrorResponse, generateRequestId, withErrorHandling } from '@/lib/utils/error-handler';
+import { withCSRFProtection } from '@/lib/utils/csrf-protection';
 
-// POST /api/polls/[id]/vote - Cast a vote for a poll option
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const pollId = params.id;
-    const body = await request.json();
-    const { optionId } = body;
+export const POST = withCSRFProtection(withErrorHandling(async (
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) => {
+  const requestId = generateRequestId();
+  
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    throw ErrorFactory.authentication('User session not found', requestId);
+  }
+
+  // Check rate limit for voting
+  const rateLimitResult = checkRateLimit(request, 'vote', session.user.id);
+  if (!rateLimitResult.success) {
+    const headers = createRateLimitHeaders(rateLimitResult);
+    const response = createSecureErrorResponse(
+      ErrorFactory.rateLimit('Voting rate limit exceeded', rateLimitResult.retryAfter, requestId),
+      requestId
+    );
     
-    // Validate required fields
-    const validationError = validateRequiredFields(body, ['optionId']);
-    if (validationError) {
-      return createErrorResponse(validationError);
-    }
-    
-    // Check if the poll exists
-    const { poll, error: pollError } = await getPoll(pollId);
-    
-    if (pollError || !poll) {
-      return createErrorResponse('Poll not found', 404);
-    }
-    
-    // Check if the poll has expired
-    if (poll.expires_at && new Date(poll.expires_at) < new Date()) {
-      return createErrorResponse('This poll has expired');
-    }
-    
-    // For anonymous users, use a cookie to track their ID
-    let anonymousId = cookies().get('anonymous_user_id')?.value;
-    
-    if (!anonymousId) {
-      anonymousId = uuidv4();
-      // In a real app, you would set this cookie in the response
-      // Since we're using Next.js API routes, we need to handle this differently
-    }
-    
-    // Check if the user has already voted (one vote per user per poll)
-    const { hasVoted, error: voteCheckError } = await hasUserVoted(pollId, anonymousId);
-    
-    if (voteCheckError) {
-      return createErrorResponse(voteCheckError.message);
-    }
-    
-    if (hasVoted) {
-      return createErrorResponse('You have already voted in this poll');
-    }
-    
-    // Cast the vote
-    const { success, error } = await castVote(pollId, optionId, anonymousId);
-    
-    if (error) {
-      return createErrorResponse(error.message);
-    }
-    
-    // Set the anonymous ID cookie in the response
-    const response = NextResponse.json({ success }, { status: 201 });
-    if (anonymousId) {
-      response.cookies.set('anonymous_user_id', anonymousId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 60 * 60 * 24 * 365, // 1 year
-        path: '/'
-      });
-    }
+    // Add rate limit headers
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
     
     return response;
-  } catch (error) {
-    return createErrorResponse('Failed to cast vote', 500);
   }
-}
 
-// GET /api/polls/[id]/vote - Check if the user has voted
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const body = await request.json().catch(() => {
+    throw ErrorFactory.validation('Invalid JSON in request body', 'Please provide valid JSON data.', requestId);
+  });
+  
+  // Validate and sanitize input
+  const validation = validateVoteInput(body);
+  if (!validation.isValid) {
+    throw ErrorFactory.validation(`Vote validation failed: ${validation.error}`, validation.error, requestId);
+  }
+
+  const { optionId } = validation.sanitizedData!;
+
+  // Validate poll ID format (should be UUID)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(params.id)) {
+    throw ErrorFactory.validation('Invalid poll ID format', 'The poll ID provided is not valid.', requestId);
+  }
+
   try {
-    const pollId = params.id;
+    const result = await castVote(
+      params.id.toLowerCase(),
+      optionId
+    );
+
+    if (!result.success || result.error) {
+      if (result.error?.message?.includes('already voted')) {
+        throw ErrorFactory.validation('Duplicate vote attempt', 'You have already voted in this poll.', requestId);
+      }
+      if (result.error?.message?.includes('not found')) {
+        throw ErrorFactory.notFound('Poll or option', requestId);
+      }
+      if (result.error?.message?.includes('expired')) {
+        throw ErrorFactory.validation('Poll expired', 'This poll has expired and no longer accepts votes.', requestId);
+      }
+      
+      throw ErrorFactory.validation(`Vote processing failed: ${result.error?.message || 'Unknown error'}`, result.error?.message || 'Unknown error', requestId);
+    }
+
+    const response = NextResponse.json({ success: true, message: 'Vote cast successfully' }, { status: 201 });
     
-    // For anonymous users, use a cookie to track their ID
-    const anonymousId = cookies().get('anonymous_user_id')?.value;
+    // Add rate limit headers to response
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    Object.entries(rateLimitHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
     
-    // Check if the user has already voted
-    const { hasVoted, error } = await hasUserVoted(pollId, anonymousId);
-    
-    if (error) {
-      return createErrorResponse(error.message);
+    // Add request ID to response headers
+    response.headers.set('X-Request-ID', requestId);
+
+    return response;
+  } catch (error: any) {
+    // If it's already an AppError, re-throw it
+    if (error.type) {
+      throw error;
     }
     
-    return createSuccessResponse({ hasVoted });
-  } catch (error) {
-    return createErrorResponse('Failed to check vote status', 500);
+    // Handle database-specific errors
+    if (error.code === '23503') {
+      throw ErrorFactory.notFound('Poll or option', requestId);
+    }
+    
+    throw ErrorFactory.database(`Failed to process vote: ${error.message}`, requestId);
   }
-}
+}));

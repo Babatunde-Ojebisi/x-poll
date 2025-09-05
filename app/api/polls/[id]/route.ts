@@ -1,84 +1,142 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPoll, getPollWithResults, deletePoll } from '@/lib/supabase/database';
-import { createErrorResponse, createSuccessResponse } from '@/lib/utils/api-helpers';
 import { createClient } from '@/lib/supabase/client';
 import { cookies } from 'next/headers';
+import { checkRateLimit, createRateLimitHeaders } from '@/lib/middleware/rate-limit';
+import { ErrorFactory, createErrorResponse as createSecureErrorResponse, generateRequestId, withErrorHandling } from '@/lib/utils/error-handler';
+import { withCSRFProtection } from '@/lib/utils/csrf-protection';
 
 // GET /api/polls/[id] - Get a specific poll
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const pollId = params.id;
-    const searchParams = request.nextUrl.searchParams;
-    const includeResults = searchParams.get('results') === 'true';
-    
-    if (includeResults) {
-      // Get poll with results
-      const { poll, error } = await getPollWithResults(pollId);
-      
-      if (error) {
-        return createErrorResponse(error.message, error.message.includes('not found') ? 404 : 400);
-      }
-      
-      return createSuccessResponse({ poll });
-    } else {
-      // Get poll with options
-      const { poll, error } = await getPoll(pollId);
-      
-      if (error) {
-        return createErrorResponse(error.message, error.message.includes('not found') ? 404 : 400);
-      }
-      
-      return createSuccessResponse({ poll });
-    }
-  } catch (error) {
-    return createErrorResponse('Failed to fetch poll', 500);
+export const GET = withErrorHandling(async (
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) => {
+  const requestId = generateRequestId();
+  
+  // Validate poll ID format (should be UUID)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(params.id)) {
+    throw ErrorFactory.validation('Invalid poll ID format', 'The poll ID provided is not valid.', requestId);
   }
-}
+  
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  try {
+    let poll;
+    
+    if (session && session.user) {
+      // User is authenticated, get poll with results
+      const { poll: pollData, error } = await getPollWithResults(params.id);
+      if (error) {
+        if (error.message?.includes('not found')) {
+          throw ErrorFactory.notFound('Poll', requestId);
+        }
+        throw ErrorFactory.database(`Failed to fetch poll with results: ${error.message}`, requestId);
+      }
+      poll = pollData;
+    } else {
+      // User is not authenticated, get basic poll info
+      const { poll: pollData, error } = await getPoll(params.id);
+      if (error) {
+        if (error.message?.includes('not found')) {
+          throw ErrorFactory.notFound('Poll', requestId);
+        }
+        throw ErrorFactory.database(`Failed to fetch poll: ${error.message}`, requestId);
+      }
+      poll = pollData;
+    }
+    
+    const response = NextResponse.json(poll, { status: 200 });
+    response.headers.set('X-Request-ID', requestId);
+    
+    return response;
+  } catch (error: any) {
+    // If it's already an AppError, re-throw it
+    if (error.type) {
+      throw error;
+    }
+    
+    throw ErrorFactory.database(`Failed to fetch poll: ${error.message}`, requestId);
+  }
+});
 
 // DELETE /api/polls/[id] - Delete a poll
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const pollId = params.id;
-    console.log(`API route: Received DELETE request for poll ID: ${pollId}`);
-    
-    // Create a Supabase client with cookies for server-side authentication
-    const cookieStore = cookies();
-    
-    // Log all cookies for debugging
-    console.log('API route: Available cookies:', [...cookieStore.getAll()].map(c => c.name));
-    
-    // Create server-side Supabase client with cookies
-    const supabase = createClient(cookieStore);
-    
-    // Verify authentication before proceeding
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError) {
-      console.error('API route: Session error:', sessionError);
-      return createErrorResponse(`Authentication error: ${sessionError.message}`, 401);
-    }
-    
-    if (!session) {
-      console.error('API route: No authenticated session found');
-      // Instead of returning an error, let's try to delete the poll anyway
-      // The RLS policies in Supabase will prevent unauthorized deletions
-      console.log('API route: Proceeding with deletion attempt despite no session');
-    } else {
-      console.log('API route: Authenticated session found, proceeding with deletion');
-    }
-    
-    // Delete the poll
-    const { success, error } = await deletePoll(pollId);
-    
-    if (error) {
-      console.error(`API route: Error deleting poll ${pollId}:`, error);
-      return createErrorResponse(error.message || 'Failed to delete poll');
-    }
-    
-    console.log(`API route: Successfully deleted poll ${pollId}`);
-    return createSuccessResponse({ success });
-  } catch (error) {
-    console.error('API route: Unhandled exception in DELETE poll:', error);
-    return createErrorResponse('Failed to delete poll', 500);
+export const DELETE = withCSRFProtection(withErrorHandling(async (
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) => {
+  const requestId = generateRequestId();
+  
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    throw ErrorFactory.authentication('User session not found', requestId);
   }
-}
+
+  // Check rate limit for deletion
+  const rateLimitResult = checkRateLimit(request, 'default', session.user.id);
+  if (!rateLimitResult.success) {
+    const headers = createRateLimitHeaders(rateLimitResult);
+    const response = createSecureErrorResponse(
+      ErrorFactory.rateLimit('Poll deletion rate limit exceeded', rateLimitResult.retryAfter, requestId),
+      requestId
+    );
+    
+    // Add rate limit headers
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+    
+    return response;
+  }
+
+  // Validate poll ID format (should be UUID)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(params.id)) {
+    throw ErrorFactory.validation('Invalid poll ID format', 'The poll ID provided is not valid.', requestId);
+  }
+
+  try {
+    const result = await deletePoll(params.id, session.user.id);
+
+    if (result.error) {
+      if (result.error === 'Poll not found or unauthorized') {
+        throw ErrorFactory.authorization('You are not authorized to delete this poll or it does not exist.', requestId);
+      }
+      
+      throw ErrorFactory.validation(`Poll deletion failed: ${result.error}`, result.error, requestId);
+    }
+
+    const response = NextResponse.json(
+      { message: 'Poll deleted successfully' },
+      { status: 200 }
+    );
+    
+    // Add rate limit headers to response
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    Object.entries(rateLimitHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+    
+    // Add request ID to response headers
+    response.headers.set('X-Request-ID', requestId);
+
+    return response;
+  } catch (error: any) {
+    // If it's already an AppError, re-throw it
+    if (error.type) {
+      throw error;
+    }
+    
+    // Handle database-specific errors
+    if (error.code === '23503') {
+      throw ErrorFactory.database('Cannot delete poll due to existing references', requestId);
+    }
+    
+    throw ErrorFactory.database(`Failed to delete poll: ${error.message}`, requestId);
+  }
+}));

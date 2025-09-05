@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPoll, getPublicPolls, getUserPolls } from '@/lib/supabase/database';
-import { createErrorResponse, createSuccessResponse, validateRequiredFields, validateFutureDate } from '@/lib/utils/api-helpers';
+import { createErrorResponse, createSuccessResponse, validatePollInput } from '@/lib/utils/api-helpers';
+import { createClient } from '@/lib/supabase/client';
+import { cookies } from 'next/headers';
+import { checkRateLimit, createRateLimitHeaders } from '@/lib/middleware/rate-limit';
+import { ErrorFactory, createErrorResponse as createSecureErrorResponse, generateRequestId, withErrorHandling } from '@/lib/utils/error-handler';
+import { withCSRFProtection } from '@/lib/utils/csrf-protection';
 
 // GET /api/polls - Get all polls (public or user's polls)
 export async function GET(request: NextRequest) {
@@ -33,45 +38,71 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/polls - Create a new poll
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { title, description, expires_at, options } = body;
+export const POST = withCSRFProtection(withErrorHandling(async (request: NextRequest) => {
+  const requestId = generateRequestId();
+  
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    throw ErrorFactory.authentication('User session not found', requestId);
+  }
+
+  // Check rate limit for poll creation
+  const rateLimitResult = checkRateLimit(request, 'createPoll', session.user.id);
+  if (!rateLimitResult.success) {
+    const headers = createRateLimitHeaders(rateLimitResult);
+    const response = createSecureErrorResponse(
+      ErrorFactory.rateLimit('Poll creation rate limit exceeded', rateLimitResult.retryAfter, requestId),
+      requestId
+    );
     
-    // Validate required fields
-    const validationError = validateRequiredFields(body, ['title', 'options']);
-    if (validationError) {
-      return createErrorResponse(validationError);
-    }
-    
-    if (!Array.isArray(options) || options.length < 2) {
-      return createErrorResponse('At least two options are required');
-    }
-    
-    // Parse expiration date if provided
-    let parsedExpiresAt = null;
-    if (expires_at) {
-      const { isValid, parsedDate } = validateFutureDate(expires_at);
-      if (!isValid) {
-        return createErrorResponse('Expiration date must be in the future');
-      }
-      parsedExpiresAt = parsedDate;
-    }
-    
-    // Create the poll
-    const { poll, error } = await createPoll({
-      title,
-      description: description || null,
-      expires_at: parsedExpiresAt?.toISOString() || null,
-      options
+    // Add rate limit headers
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value);
     });
     
-    if (error) {
-      return createErrorResponse(error.message);
+    return response;
+  }
+
+  const body = await request.json().catch(() => {
+    throw ErrorFactory.validation('Invalid JSON in request body', 'Please provide valid JSON data.', requestId);
+  });
+  
+  // Validate and sanitize input
+  const validation = validatePollInput(body);
+  if (!validation.isValid) {
+    throw ErrorFactory.validation(`Poll validation failed: ${validation.error}`, validation.error, requestId);
+  }
+
+  const { title, description, expires_at, options } = validation.sanitizedData!;
+
+  try {
+    const poll = await createPoll({
+      title,
+      description,
+      expires_at,
+      options,
+    });
+
+    const response = NextResponse.json(poll, { status: 201 });
+    
+    // Add rate limit headers to response
+    const rateLimitHeaders = createRateLimitHeaders(rateLimitResult);
+    Object.entries(rateLimitHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+    
+    // Add request ID to response headers
+    response.headers.set('X-Request-ID', requestId);
+
+    return response;
+  } catch (error: any) {
+    if (error.message?.includes('duplicate') || error.code === '23505') {
+      throw ErrorFactory.validation('Duplicate poll detected', 'A poll with similar content already exists.', requestId);
     }
     
-    return createSuccessResponse({ poll }, 201);
-  } catch (error) {
-    return createErrorResponse('Failed to create poll', 500);
+    throw ErrorFactory.database(`Failed to create poll: ${error.message}`, requestId);
   }
-}
+}));

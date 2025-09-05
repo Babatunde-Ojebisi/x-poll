@@ -81,11 +81,9 @@ export function createClient(cookieStore: ReadonlyRequestCookies) {
         },
         set(name: string, value: string, options: CookieOptions) {
           // This is a read-only cookie store, so we do nothing for set operations
-          console.log(`Would set cookie ${name} in a writable cookie store`);
         },
         remove(name: string, options: CookieOptions) {
           // This is a read-only cookie store, so we do nothing for remove operations
-          console.log(`Would remove cookie ${name} in a writable cookie store`);
         },
       },
     }

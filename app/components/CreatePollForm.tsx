@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth';
+import { useCSRF } from '@/hooks/useCSRF';
 
 export default function CreatePollForm() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const { createPoll, isLoading: csrfLoading } = useCSRF();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
@@ -56,17 +58,11 @@ export default function CreatePollForm() {
     try {
       setIsSubmitting(true);
       
-      const response = await fetch('/api/polls', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          description: description || null,
-          expires_at: expiresAt || null,
-          options: validOptions,
-        }),
+      const response = await createPoll({
+        title,
+        description: description || undefined,
+        expiresAt: expiresAt || undefined,
+        options: validOptions,
       });
       
       const data = await response.json();
@@ -216,7 +212,7 @@ export default function CreatePollForm() {
         <div className="mt-6">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || csrfLoading}
             className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
             {isSubmitting ? 'Creating...' : 'Create Poll'}

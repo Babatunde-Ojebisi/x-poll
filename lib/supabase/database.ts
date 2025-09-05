@@ -69,20 +69,11 @@ export async function createPoll(pollInput: {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    console.log('Auth Debug Info:', {
-      user: user ? { id: user.id, email: user.email } : null,
-      session: session ? { access_token: session.access_token ? 'present' : 'missing' } : null,
-      userError,
-      sessionError
-    });
-    
     if (userError || !user) {
-      console.error('Authentication failed:', userError);
       return { poll: null, error: userError || new Error('User not authenticated. Please sign in first.') };
     }
     
     if (!session) {
-      console.error('No active session found');
       return { poll: null, error: new Error('No active session. Please sign in again.') };
     }
     
@@ -94,8 +85,6 @@ export async function createPoll(pollInput: {
       user_id: user.id
     };
     
-    console.log('Attempting to insert poll:', pollData);
-    
     const { data: insertedPoll, error: pollError } = await supabase
       .from('polls')
       .insert(pollData)
@@ -103,7 +92,6 @@ export async function createPoll(pollInput: {
       .single();
     
     if (pollError) {
-      console.error('Poll insertion error:', pollError);
       if (pollError.message?.includes('row-level security policy')) {
         return { 
           poll: null, 
@@ -123,18 +111,13 @@ export async function createPoll(pollInput: {
       option_text: option
     }));
     
-    console.log('Attempting to insert options:', optionsToInsert);
-    
     const { error: optionsError } = await supabase
       .from('poll_options')
       .insert(optionsToInsert);
     
     if (optionsError) {
-      console.error('Options insertion error:', optionsError);
       return { poll: null, error: optionsError };
     }
-    
-    console.log('Poll created successfully:', insertedPoll);
     return { poll: insertedPoll as Poll, error: null };
   } catch (error) {
     console.error('Error creating poll:', error);
@@ -365,11 +348,19 @@ export async function hasUserVoted(
   }
 }
 
-export async function deletePoll(pollId: string): Promise<{ success: boolean; error: any }> {
-  console.log(`Attempting to delete poll with ID: ${pollId}`);
-  
+export async function deletePoll(pollId: string, userId?: string): Promise<{ success: boolean; error: any }> {
   try {
-    // Get the poll first to check if it exists
+    // Get the authenticated user if not provided
+    let authenticatedUserId = userId;
+    if (!authenticatedUserId) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        return { success: false, error: new Error('Authentication required') };
+      }
+      authenticatedUserId = user.id;
+    }
+    
+    // Get the poll first to check if it exists and verify ownership
     const { data: pollData, error: pollError } = await supabase
       .from('polls')
       .select('id, user_id')
@@ -377,33 +368,31 @@ export async function deletePoll(pollId: string): Promise<{ success: boolean; er
       .single();
       
     if (pollError) {
-      console.error('Error fetching poll:', pollError);
       return { success: false, error: pollError };
     }
     
     if (!pollData) {
-      console.error('Poll not found');
       return { success: false, error: new Error('Poll not found') };
     }
     
-    console.log(`Found poll with ID: ${pollId}, proceeding with deletion`);
+    // Verify user ownership
+    if (pollData.user_id !== authenticatedUserId) {
+      return { success: false, error: new Error('Unauthorized: You can only delete your own polls') };
+    }
     
-    // Delete the poll without checking user_id
-    // The Row Level Security policies in Supabase will handle authorization
+    // Delete the poll with proper authorization check
     const { error: deleteError } = await supabase
       .from('polls')
       .delete()
-      .eq('id', pollId);
+      .eq('id', pollId)
+      .eq('user_id', authenticatedUserId); // Additional safety check
     
     if (deleteError) {
-      console.error('Supabase error in deletePoll:', deleteError);
       return { success: false, error: deleteError };
     }
     
-    console.log(`Successfully deleted poll with ID: ${pollId}`);
     return { success: true, error: null };
   } catch (error) {
-    console.error('Exception in deletePoll:', error);
     return { success: false, error };
   }
 }

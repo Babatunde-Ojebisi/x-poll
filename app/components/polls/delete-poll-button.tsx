@@ -21,8 +21,6 @@ export default function DeletePollButton({ pollId, onDeleteSuccess }: DeletePoll
 
     try {
       setIsDeleting(true);
-      console.log('Attempting to delete poll:', pollId);
-      
       // Get auth cookies from browser and include them in the request
       const response = await fetch(`/api/polls/${pollId}`, {
         method: 'DELETE',
@@ -34,18 +32,15 @@ export default function DeletePollButton({ pollId, onDeleteSuccess }: DeletePoll
       });
 
       const responseText = await response.text();
-      console.log('Delete response:', response.status, responseText);
       
       let errorData;
       try {
         errorData = responseText ? JSON.parse(responseText) : {};
       } catch (e) {
-        console.error('Error parsing response:', e);
         errorData = { message: responseText || 'Unknown error' };
       }
 
       if (response.ok) {
-        console.log('Poll deleted successfully');
         
         // Call the onDeleteSuccess callback if provided
         if (onDeleteSuccess) {

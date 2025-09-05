@@ -13,24 +13,8 @@ export function Navbar() {
   const router = useRouter();
 
   const handleSignOut = async () => {
-    try {
-      // Clear local storage first to ensure session data is removed
-      localStorage.removeItem('supabase.auth.token');
-      
-      // Then attempt to sign out from Supabase
-      await supabase.auth.signOut().catch(err => {
-        console.log('Ignoring Supabase signOut error:', err);
-      });
-      
-      // Force refresh the page to ensure clean state
-      router.refresh();
-      router.push('/');
-    } catch (error) {
-      console.error('Error in signOut process:', error);
-      // Still redirect to home page even if there's an error
-      router.refresh();
-      router.push('/');
-    }
+    await supabase.auth.signOut();
+    router.push('/');
   };
 
   return (
